@@ -1,1 +1,298 @@
 
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quantum Image Compressor</title>
+    <style>
+        /* Base Styles */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', sans-serif;
+        }
+
+        body {
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            color: #fff;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+
+        /* Glass Effect with Fallback */
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 2rem;
+            /* Fallback for browsers without backdrop-filter support */
+            background-color: rgba(255, 255, 255, 0.1);
+        }
+
+        /* Upload Area */
+        .upload-area {
+            border: 2px dashed rgba(255, 255, 255, 0.3);
+            border-radius: 15px;
+            padding: 3rem;
+            text-align: center;
+            cursor: pointer;
+        }
+
+        /* Button Styles */
+        .btn {
+            background: linear-gradient(135deg, #4e54c8 0%, #8f94fb 100%);
+            padding: 1rem 2rem;
+            color: white;
+            border-radius: 8px;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-block;
+        }
+
+        /* Preview Layout */
+        .preview-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 2rem;
+            margin-top: 2rem;
+        }
+
+        .file-preview {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+
+        .original-preview, .compressed-preview {
+            text-align: center;
+        }
+
+        img {
+            max-width: 100%;
+            height: auto;
+            border-radius: 8px;
+        }
+
+        /* Loader Animation */
+        .loader {
+            display: none;
+            width: 40px;
+            height: 40px;
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #4e54c8;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 1rem auto;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="glass-panel">
+            <h1>Quantum Image Compressor</h1>
+            <div class="upload-area" id="dropZone">
+                <p>Drag & Drop images here or</p>
+                <input type="file" id="fileInput" hidden accept="image/*" multiple>
+                <button class="btn" id="uploadButton">Choose Files</button>
+            </div>
+            <div class="slider-container">
+                <label>Quality: <span id="qualityValue">70</span>%</label>
+                <input type="range" class="quality-slider" id="qualitySlider" min="0" max="100" value="70">
+            </div>
+            <button class="btn" id="compressBtn">Compress Now</button>
+            <div class="loader" id="loader"></div>
+            <div class="preview-container" id="previewContainer"></div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/browser-image-compression@2.0.2/dist/browser-image-compression.min.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // State
+            let originalFiles = [];
+            const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB in bytes
+
+            // DOM Elements
+            const uploadButton = document.getElementById('uploadButton');
+            const fileInput = document.getElementById('fileInput');
+            const dropZone = document.getElementById('dropZone');
+            const qualitySlider = document.getElementById('qualitySlider');
+            const qualityValue = document.getElementById('qualityValue');
+            const compressBtn = document.getElementById('compressBtn');
+            const previewContainer = document.getElementById('previewContainer');
+            const loader = document.getElementById('loader');
+
+            // Event Listeners
+            uploadButton.addEventListener('click', () => fileInput.click());
+
+            fileInput.addEventListener('change', (e) => {
+                handleFileSelection(e.target.files);
+            });
+
+            dropZone.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                dropZone.style.borderColor = '#4e54c8';
+            });
+
+            dropZone.addEventListener('dragleave', () => {
+                dropZone.style.borderColor = 'rgba(255, 255, 255, 0.3)';
+            });
+
+            dropZone.addEventListener('drop', (e) => {
+                e.preventDefault();
+                dropZone.style.borderColor = 'rgba(255, 255, 255, 0.3)';
+                handleFileSelection(e.dataTransfer.files);
+            });
+
+            qualitySlider.addEventListener('input', (e) => {
+                qualityValue.textContent = e.target.value;
+            });
+
+            compressBtn.addEventListener('click', compressImages);
+
+            // File Handling Functions
+            function handleFileSelection(files) {
+                originalFiles = Array.from(files).filter(file => {
+                    if (!file.type.startsWith('image/')) {
+                        showError(`Invalid file type for ${file.name} - only images allowed`);
+                        return false;
+                    }
+                    if (file.size > MAX_FILE_SIZE) {
+                        showError(`File ${file.name} exceeds size limit (${MAX_FILE_SIZE / 1024 / 1024}MB)`);
+                        return false;
+                    }
+                    return true;
+                });
+
+                if (originalFiles.length === 0) {
+                    showError('No valid images selected');
+                    return;
+                }
+
+                showPreviews();
+            }
+
+            function showPreviews() {
+                previewContainer.innerHTML = '';
+                originalFiles.forEach((file, index) => {
+                    const filePreview = document.createElement('div');
+                    filePreview.className = 'file-preview';
+                    filePreview.id = `file-preview-${index}`;
+
+                    const originalPreview = document.createElement('div');
+                    originalPreview.className = 'original-preview';
+
+                    const img = document.createElement('img');
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        img.src = e.target.result;
+                    };
+                    reader.readAsDataURL(file);
+
+                    const sizeText = document.createElement('div');
+                    sizeText.textContent = `Original: ${formatFileSize(file.size)}`;
+
+                    originalPreview.appendChild(img);
+                    originalPreview.appendChild(sizeText);
+
+                    const compressedPreview = document.createElement('div');
+                    compressedPreview.className = 'compressed-preview';
+
+                    filePreview.appendChild(originalPreview);
+                    filePreview.appendChild(compressedPreview);
+                    previewContainer.appendChild(filePreview);
+                });
+            }
+
+            // Compression Functions
+            async function compressImages() {
+                if (originalFiles.length === 0) {
+                    showError('Please select images first!');
+                    return;
+                }
+
+                toggleProcessing(true);
+                const quality = qualitySlider.value / 100;
+
+                try {
+                    await Promise.all(
+                        originalFiles.map(async (file, index) => {
+                            try {
+                                const options = {
+                                    maxWidthOrHeight: 1920,
+                                    useWebWorker: true,
+                                    initialQuality: quality
+                                };
+                                const compressedFile = await imageCompression(file, options);
+                                showComparison(compressedFile, index);
+                            } catch (error) {
+                                console.error(`Error compressing ${file.name}:`, error);
+                                // Optionally handle individual file errors
+                            }
+                        })
+                    );
+                } catch (error) {
+                    showError('An error occurred during compression');
+                } finally {
+                    toggleProcessing(false);
+                }
+            }
+
+            function showComparison(compressedFile, index) {
+                const originalFile = originalFiles[index];
+                const savingsBytes = originalFile.size - compressedFile.size;
+                const savingsPercent = (savingsBytes / originalFile.size * 100).toFixed(2);
+                const extension = originalFile.name.split('.').pop();
+
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    const compressedPreview = document.querySelector(`#file-preview-${index} .compressed-preview`);
+                    compressedPreview.innerHTML = `
+                        <img src="${e.target.result}" alt="Compressed preview">
+                        <div>Compressed: ${formatFileSize(compressedFile.size)}</div>
+                        <div>Savings: ${savingsPercent}% (${formatFileSize(savingsBytes)})</div>
+                        <a href="${e.target.result}" 
+                           download="compressed-${index}.${extension}" 
+                           class="btn">
+                           Download
+                        </a>
+                    `;
+                };
+                reader.readAsDataURL(compressedFile);
+            }
+
+            // Utility Functions
+            function formatFileSize(bytes) {
+                if (bytes === 0) return '0 Bytes';
+                const k = 1024;
+                const sizes = ['Bytes', 'KB', 'MB'];
+                const i = Math.floor(Math.log(bytes) / Math.log(k));
+                return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+            }
+
+            function toggleProcessing(isProcessing) {
+                compressBtn.disabled = isProcessing;
+                loader.style.display = isProcessing ? 'block' : 'none';
+            }
+
+            function showError(message) {
+                alert(`Error: ${message}`);
+                console.error('Error:', message);
+            }
+        });
+    </script>
+</body>
+</html>
